@@ -6,3 +6,9 @@ SourceDir.var
 BuildDir.var
 YasmPath.var
 ci-output/
+bin/
+*.cmake
+CMakeFiles/
+CMakeConfigureLog.yaml
+Makefile
+CMakeCache.txt

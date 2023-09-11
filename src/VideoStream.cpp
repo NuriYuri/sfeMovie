@@ -59,12 +59,12 @@ namespace sfe
         
         // RGBA video buffer
         err = av_image_alloc(m_rgbaVideoBuffer, m_rgbaVideoLinesize,
-                             m_stream->codec->width, m_stream->codec->height,
+                             m_codec_context->width, m_codec_context->height,
                              AV_PIX_FMT_RGBA, 1);
         CHECK(err >= 0, "VideoStream() - av_image_alloc() error");
         
         // SFML video frame
-        err = m_texture.create(m_stream->codec->width, m_stream->codec->height);
+        err = m_texture.create(m_codec_context->width, m_codec_context->height);
         CHECK(err, "VideoStream() - sf::Texture::create() error");
         
         initRescaler();
@@ -95,7 +95,7 @@ namespace sfe
     
     sf::Vector2i VideoStream::getFrameSize() const
     {
-        return sf::Vector2i(m_stream->codec->width, m_stream->codec->height);
+        return sf::Vector2i(m_codec_context->width, m_codec_context->height);
     }
     
     float VideoStream::getFrameRate() const
@@ -171,59 +171,74 @@ namespace sfe
     
     bool VideoStream::onGetData(sf::Texture& texture)
     {
-        AVPacket* packet = popEncodedData();
-        bool gotFrame = false;
-        bool goOn = false;
-        
-        if (packet)
-        {
-            goOn = true;
-            
-            while (!gotFrame && packet && goOn)
-            {
-                bool needsMoreDecoding = false;
-                
-                CHECK(packet != nullptr, "inconsistency error");
-                goOn = decodePacket(packet, m_rawVideoFrame, gotFrame, needsMoreDecoding);
-                
-                if (gotFrame)
-                {
-                    rescale(m_rawVideoFrame, m_rgbaVideoBuffer, m_rgbaVideoLinesize);
-                    texture.update(m_rgbaVideoBuffer[0]);
-                }
-                
-                if (!gotFrame && goOn)
-                {
-                    // Decoding went fine but did not produce an image. This means the decoder is working in
-                    // a pipelined way and wants more packets to output a full image. When the first full image will
-                    // be generated, the encoded data queue head pts will be late compared to the generated image pts
-                    // To take that into account we accumulate this time difference for reuse in getSynchronizationGap()
-                    m_codecBufferingDelays.push_back(packetDuration(packet));
-                    
-                    if (m_codecBufferingDelays.size() > m_stream->codec->delay)
-                        m_codecBufferingDelays.pop_front();
-                    
-                    sfeLogDebug("Accumulated video codec time: " + s(codecBufferingDelay().asMilliseconds()) + "ms");
-                }
-                
-                if (needsMoreDecoding)
-                {
-                    prependEncodedData(packet);
-                }
-                else
-                {
-                    av_free_packet(packet);
-                    av_free(packet);
-                }
-                
-                if (!gotFrame && goOn)
-                {
-                    packet = popEncodedData();
-                }
+        AVPacket* packet = popEncodedData();       
+        while (packet) {
+            int result = decodePacket(packet, m_rawVideoFrame);
+
+            if (result == AVERROR_EOF) {
+                return false;
             }
+
+            if (result == AVERROR(EAGAIN)) {
+                m_codecBufferingDelays.push_back(packetDuration(packet));
+                if (m_codecBufferingDelays.size() > m_codec_context->delay)
+                    m_codecBufferingDelays.pop_front();
+                
+                sfeLogDebug("Accumulated video codec time: " + s(codecBufferingDelay().asMilliseconds()) + "ms");
+            }
+            av_packet_free(&packet);
+
+            if (result == 0) {
+                rescale(m_rawVideoFrame, m_rgbaVideoBuffer, m_rgbaVideoLinesize);
+                texture.update(m_rgbaVideoBuffer[0]);
+                break;
+            }
+
+            packet = popEncodedData();
         }
+            // while (!gotFrame && packet && goOn)
+            // {
+            //     bool needsMoreDecoding = false;
+                
+            //     CHECK(packet != nullptr, "inconsistency error");
+            //     goOn = decodePacket(packet, m_rawVideoFrame, gotFrame, needsMoreDecoding);
+                
+            //     if (gotFrame)
+            //     {
+            //         rescale(m_rawVideoFrame, m_rgbaVideoBuffer, m_rgbaVideoLinesize);
+            //         texture.update(m_rgbaVideoBuffer[0]);
+            //     }
+                
+            //     if (!gotFrame && goOn)
+            //     {
+            //         // Decoding went fine but did not produce an image. This means the decoder is working in
+            //         // a pipelined way and wants more packets to output a full image. When the first full image will
+            //         // be generated, the encoded data queue head pts will be late compared to the generated image pts
+            //         // To take that into account we accumulate this time difference for reuse in getSynchronizationGap()
+            //         m_codecBufferingDelays.push_back(packetDuration(packet));
+                    
+            //         if (m_codecBufferingDelays.size() > m_codec_context->delay)
+            //             m_codecBufferingDelays.pop_front();
+                    
+            //         sfeLogDebug("Accumulated video codec time: " + s(codecBufferingDelay().asMilliseconds()) + "ms");
+            //     }
+                
+            //     if (needsMoreDecoding)
+            //     {
+            //         prependEncodedData(packet);
+            //     }
+            //     else
+            //     {
+            //         av_packet_free(&packet);
+            //     }
+                
+            //     if (!gotFrame && goOn)
+            //     {
+            //         packet = popEncodedData();
+            //     }
+            // }
         
-        return goOn;
+        return true;
     }
     
     bool VideoStream::getSynchronizationGap(sf::Time& gap)
@@ -240,30 +255,15 @@ namespace sfe
             return false;
         }
     }
-    
-    bool VideoStream::decodePacket(AVPacket* packet, AVFrame* outputFrame, bool& gotFrame, bool& needsMoreDecoding)
+
+    int VideoStream::decodePacket(AVPacket* packet, AVFrame* outputFrame)
     {
-        int gotPicture = 0;
-        needsMoreDecoding = false;
-        
-        int decodedLength = avcodec_decode_video2(m_stream->codec, outputFrame, &gotPicture, packet);
-        gotFrame = (gotPicture != 0);
-        
-        if (decodedLength > 0 || gotFrame)
-        {
-            if (decodedLength < packet->size)
-            {
-                needsMoreDecoding = true;
-                packet->data += decodedLength;
-                packet->size -= decodedLength;
-            }
-            
-            return true;
-        }
-        else
-        {
+        auto ret = avcodec_send_packet(m_codec_context, packet);
+        if (ret < 0) {
+            sfeLogError("Error submitting a packet for decoding" + av_err2str(ret));
             return false;
         }
+        return avcodec_receive_frame(m_codec_context, outputFrame);
     }
     
     void VideoStream::initRescaler()
@@ -276,8 +276,8 @@ namespace sfe
             algorithm |= SWS_ACCURATE_RND;
         }
         
-        m_swsCtx = sws_getCachedContext(nullptr, m_stream->codec->width, m_stream->codec->height, m_stream->codec->pix_fmt,
-                                        m_stream->codec->width, m_stream->codec->height, AV_PIX_FMT_RGBA,
+        m_swsCtx = sws_getCachedContext(nullptr, m_codec_context->width, m_codec_context->height, m_codec_context->pix_fmt,
+                                        m_codec_context->width, m_codec_context->height, AV_PIX_FMT_RGBA,
                                         algorithm, nullptr, nullptr, nullptr);
         CHECK(m_swsCtx, "VideoStream::initRescaler() - sws_getContext() error");
     }

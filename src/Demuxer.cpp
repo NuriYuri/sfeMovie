@@ -46,8 +46,6 @@ namespace sfe
     
     static void loadFFmpeg()
     {
-        ONCE(av_register_all());
-        ONCE(avcodec_register_all());
         ONCE(Log::initialize());
     }
     
@@ -64,12 +62,13 @@ namespace sfe
     
     const std::list<Demuxer::DemuxerInfo>& Demuxer::getAvailableDemuxers()
     {
-        AVInputFormat* demuxer = nullptr;
+        const AVInputFormat* demuxer = nullptr;
+        void* opaque = nullptr;
         loadFFmpeg();
         
         if (g_availableDemuxers.empty())
         {
-            while (nullptr != (demuxer = av_iformat_next(demuxer)))
+            while (nullptr != (demuxer = av_demuxer_iterate(&opaque)))
             {
                 DemuxerInfo info =
                 {
@@ -86,12 +85,13 @@ namespace sfe
     
     const std::list<Demuxer::DecoderInfo>& Demuxer::getAvailableDecoders()
     {
-        AVCodec* codec = nullptr;
+        const AVCodec* codec = nullptr;
+        void* opaque = nullptr;
         loadFFmpeg();
         
         if (g_availableDecoders.empty())
         {
-            while (nullptr != (codec = av_codec_next(codec)))
+            while (nullptr != (codec = av_codec_iterate(&opaque)))
             {
                 DecoderInfo info =
                 {
@@ -155,7 +155,7 @@ namespace sfe
             {
                 std::shared_ptr<Stream> stream;
                 
-                switch (ffstream->codec->codec_type)
+                switch (ffstream->codecpar->codec_type)
                 {
                     case AVMEDIA_TYPE_VIDEO:
                         stream = std::make_shared<VideoStream>(m_formatCtx, ffstream, *this, timer, videoDelegate);
@@ -165,7 +165,7 @@ namespace sfe
                             extractDurationFromStream(ffstream);
                         }
                         
-                        sfeLogDebug("Loaded " + avcodec_get_name(ffstream->codec->codec_id) + " video stream");
+                        sfeLogDebug("Loaded " + avcodec_get_name(ffstream->codecpar->codec_id) + " video stream");
                         break;
                         
                     case AVMEDIA_TYPE_AUDIO:
@@ -176,12 +176,12 @@ namespace sfe
                             extractDurationFromStream(ffstream);
                         }
                         
-                        sfeLogDebug("Loaded " + avcodec_get_name(ffstream->codec->codec_id) + " audio stream");
+                        sfeLogDebug("Loaded " + avcodec_get_name(ffstream->codecpar->codec_id) + " audio stream");
                         break;
                     case AVMEDIA_TYPE_SUBTITLE:
                         stream = std::make_shared<SubtitleStream>(m_formatCtx, ffstream, *this, timer, subtitleDelegate);
                         
-                        sfeLogDebug("Loaded " + avcodec_get_name(ffstream->codec->codec_id) + " subtitle stream");
+                        sfeLogDebug("Loaded " + avcodec_get_name(ffstream->codecpar->codec_id) + " subtitle stream");
                         break;
                     default:
                         m_ignoredStreams[ffstream->index] = Stream::AVStreamDescription(ffstream);
@@ -426,8 +426,7 @@ namespace sfe
             {
                 if (!distributePacket(pkt, stream))
                 {
-                    av_free_packet(pkt);
-                    av_free(pkt);
+                    av_packet_free(&pkt);
                 }
             }
         }
@@ -476,16 +475,14 @@ namespace sfe
         AVPacket *pkt = nullptr;
         int err = 0;
         
-        pkt = (AVPacket *)av_malloc(sizeof(*pkt));
+        pkt = av_packet_alloc();
         CHECK(pkt, "Demuxer::readPacket() - out of memory");
-        av_init_packet(pkt);
         
         err = av_read_frame(m_formatCtx, pkt);
         
         if (err < 0)
         {
-            av_free_packet(pkt);
-            av_free(pkt);
+            av_packet_free(&pkt);
             pkt = nullptr;
         }
         
@@ -500,8 +497,7 @@ namespace sfe
         {
             for (AVPacket* packet : pair.second)
             {
-                av_free_packet(packet);
-                av_free(packet);
+                av_packet_free(&packet);
             }
         }
         
@@ -525,8 +521,7 @@ namespace sfe
         }
         
         sfeLogError("No stream can use the packet, destroying it");
-        av_free_packet(packet);
-        av_free(packet);
+        av_packet_free(&packet);
     }
     
     bool Demuxer::hasPendingDataForStream(const Stream& stream) const

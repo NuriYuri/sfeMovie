@@ -35,6 +35,7 @@
 extern "C"
 {
 #include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
 }
 
 namespace sfe
@@ -184,10 +185,11 @@ namespace sfe
         
         AVFormatContext* & m_formatCtx;
         AVStream*& m_stream;
+        AVCodecContext* m_codec_context;
         
         DataSource& m_dataSource;
         std::shared_ptr<Timer> m_timer;
-        AVCodec* m_codec;
+        const AVCodec* m_codec;
         int m_streamID;
         std::string m_language;
         std::list <AVPacket*> m_packetList;

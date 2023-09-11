@@ -39,13 +39,14 @@ namespace sfe
 {
     std::string Stream::AVStreamDescription(AVStream* stream)
     {
-        return std::string("'" + std::string(av_get_media_type_string(stream->codec->codec_type))
-                           + "/" + avcodec_get_name(stream->codec->codec_id) + "' stream @ " + s(stream));
+        return std::string("'" + std::string(av_get_media_type_string(stream->codecpar->codec_type))
+                           + "/" + avcodec_get_name(stream->codecpar->codec_id) + "' stream @ " + s(stream));
     }
     
     Stream::Stream(AVFormatContext*& formatCtx, AVStream*& stream, DataSource& dataSource, std::shared_ptr<Timer> timer) :
     m_formatCtx(formatCtx),
     m_stream(stream),
+    m_codec_context(nullptr),
     m_dataSource(dataSource),
     m_timer(timer),
     m_codec(nullptr),
@@ -64,12 +65,15 @@ namespace sfe
         CHECK(m_streamID >= 0, "Inconcistency error: invalid stream id");
         
         // Get the decoder
-        m_codec = avcodec_find_decoder(m_stream->codec->codec_id);
-        CHECK(m_codec, "Stream() - no decoder for " + std::string(avcodec_get_name(m_stream->codec->codec_id)) + " codec");
-        
+        m_codec = avcodec_find_decoder(m_stream->codecpar->codec_id);
+        CHECK(m_codec, "Stream() - no decoder for " + std::string(avcodec_get_name(m_stream->codecpar->codec_id)) + " codec");
+        m_codec_context = avcodec_alloc_context3(m_codec);
+        CHECK(m_codec_context, "Stream() - failed to alloc codec context");
+
+        avcodec_parameters_to_context(m_codec_context, m_stream->codecpar);
         // Load the codec
-        err = avcodec_open2(m_stream->codec, m_codec, nullptr);
-        CHECK0(err, "Stream() - unable to load decoder for codec " + std::string(avcodec_get_name(m_stream->codec->codec_id)));
+        err = avcodec_open2(m_codec_context, m_codec, nullptr);
+        CHECK0(err, "Stream() - unable to load decoder for codec " + std::string(avcodec_get_name(m_stream->codecpar->codec_id)));
         
         AVDictionaryEntry* entry = av_dict_get(m_stream->metadata, "language", nullptr, 0);
         if (entry)
@@ -83,9 +87,9 @@ namespace sfe
         disconnect();
         Stream::flushBuffers();
         
-        if (m_formatCtx && m_stream && m_stream->codec)
+        if (m_formatCtx && m_stream && m_codec_context)
         {
-            avcodec_close(m_stream->codec);
+            avcodec_free_context(&m_codec_context);
         }
         else
         {
@@ -137,10 +141,9 @@ namespace sfe
         }
         else
         {
-            if (m_stream->codec->codec->capabilities & AV_CODEC_CAP_DELAY)
+            if (m_codec_context->codec->capabilities & AV_CODEC_CAP_DELAY)
             {
-                AVPacket* flushPacket = (AVPacket*)av_malloc(sizeof(*flushPacket));
-                av_init_packet(flushPacket);
+                AVPacket* flushPacket = av_packet_alloc();
                 flushPacket->data = nullptr;
                 flushPacket->size = 0;
                 result = flushPacket;
@@ -161,7 +164,7 @@ namespace sfe
         }
         
         if (m_formatCtx && m_stream)
-            avcodec_flush_buffers(m_stream->codec);
+            avcodec_flush_buffers(m_codec_context);
         
         AVPacket* pkt = nullptr;
         
@@ -170,8 +173,7 @@ namespace sfe
             pkt = m_packetList.front();
             m_packetList.pop_front();
             
-            av_free_packet(pkt);
-            av_free(pkt);
+            av_packet_free(&pkt);
         }
     }
     

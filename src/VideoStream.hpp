@@ -92,6 +92,7 @@ namespace sfe
         void preload();
     private:
         bool onGetData(sf::Texture& texture);
+        int decodePacket(AVPacket* packet, AVFrame* outputFrame);
         
         /** Returns the difference between the video stream timer and the reference timer
          *
@@ -102,20 +103,6 @@ namespace sfe
          * @return true if the gap could be computed, false otherwise (@ref gap is left unmodified)
          */
         bool getSynchronizationGap(sf::Time& gap);
-        
-        /** Decode the encoded data @a packet into @a outputFrame
-         *
-         * gotFrame being set to false means that decoding should still continue:
-         *  - with a new packet if false is returned
-         *    - with the same packet if true is returned
-         *
-         * @param packet the encoded data
-         * @param outputFrame one decoded data
-         * @param gotFrame set to true if a frame has been extracted to outputFrame, false otherwise
-         * @param goOn set to true if decoding can continue, or false if no more data can be decoded (EOF)
-         * @return true if decoding succeeded, false otherwise (EOF)
-         */
-        bool decodePacket(AVPacket* packet, AVFrame* outputFrame, bool& gotFrame, bool& needsMoreDecoding);
         
         /** Initialize the audio resampler for conversion from many formats to signed 16 bits audio
          *

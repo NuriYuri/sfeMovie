@@ -72,19 +72,7 @@ namespace sfe
     private:
         bool onGetData(sf::SoundStream::Chunk& data) override;
         void onSeek(sf::Time timeOffset) override;
-        
-        /** Decode the encoded data @a packet into @a outputFrame
-         *
-         * gotFrame being set to false means that decoding should still continue:
-         *  - with a new packet if false is returned
-         *    - with the same packet if true is returned
-         *
-         * @param packet the encoded data
-         * @param outputFrame one decoded data
-         * @param gotFrame set to true if a frame has been extracted to outputFrame, false otherwise
-         * @return true if there's still data to decode in this packet, false otherwise
-         */
-        bool decodePacket(AVPacket* packet, AVFrame* outputFrame, bool& gotFrame);
+        int decodePacket(AVPacket* packet, AVFrame* outputFrame);
         
         /** Initialize the audio resampler for conversion from many formats to signed 16 bits audio
          *

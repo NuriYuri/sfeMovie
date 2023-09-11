@@ -39,9 +39,9 @@ else()
     return()
 endif()
 
-if (WINDOWS AND NOT MSVC)
-    message(FATAL_ERROR "Only Visual Studio (2013 and later) is supported on Windows")
-endif()
+#if (WINDOWS AND NOT MSVC)
+#    message(FATAL_ERROR "Only Visual Studio (2013 and later) is supported on Windows")
+#endif()
 
 # Set some env vars
 set (SFEMOVIE_LIB sfeMovie)
@@ -152,31 +152,6 @@ else()
     endif()
     message(STATUS "Link sfeMovie against: ${LIBASS_LIBRARIES} ${SFML_LIBRARIES} ${FFMPEG_LIBRARIES} ${OTHER_LIBRARIES} ${SFML_DEPENDENCIES}")
     target_link_libraries(${SFEMOVIE_LIB} PRIVATE ${SFEMOVIE_LIBRARIES})
-endif()
-
-if (SFEMOVIE_BUILD_FFMPEG)
-    if (LINUX)
-        add_custom_command(TARGET ${SFEMOVIE_LIB} PRE_LINK
-            COMMAND cp -R
-                "${CMAKE_BINARY_DIR}/FFmpeg-binaries/lib/*"
-                "$<TARGET_FILE_DIR:${SFEMOVIE_LIB}>")
-    elseif(MACOSX)
-        add_custom_command(TARGET ${SFEMOVIE_LIB} PRE_LINK
-            COMMAND mkdir -p "$<TARGET_FILE_DIR:${SFEMOVIE_LIB}>/Libraries")
-        add_custom_command(TARGET ${SFEMOVIE_LIB} PRE_LINK
-            COMMAND cp -R
-                "${CMAKE_BINARY_DIR}/FFmpeg-binaries/lib/*"
-                "$<TARGET_FILE_DIR:${SFEMOVIE_LIB}>/Libraries")
-    elseif(WINDOWS)
-        add_custom_command(TARGET ${SFEMOVIE_LIB} PRE_LINK
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_BINARY_DIR}/FFmpeg-binaries/lib"
-                "$<TARGET_FILE_DIR:${SFEMOVIE_LIB}>")
-        add_custom_command(TARGET ${SFEMOVIE_LIB} PRE_LINK
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${CMAKE_BINARY_DIR}/FFmpeg-binaries/bin"
-                "$<TARGET_FILE_DIR:${SFEMOVIE_LIB}>")
-    endif()
 endif()
 
 include (${CMAKE_SOURCE_DIR}/cmake/Properties.cmake)
