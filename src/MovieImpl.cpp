@@ -471,15 +471,18 @@ namespace sfe
     
     const sf::Texture& MovieImpl::getCurrentImage() const
     {
-        static sf::Texture emptyTexture;
-        
         if (m_videoSprite.getTexture())
         {
             return * m_videoSprite.getTexture();
         }
         else
         {
-            return emptyTexture;
+            // Destroy the fallback with its movie, before Windows DLL detach.
+            // A static Texture keeps an OpenGL context alive into driver teardown.
+            if (!m_emptyTexture)
+                m_emptyTexture.reset(new sf::Texture());
+
+            return *m_emptyTexture;
         }
     }
     
