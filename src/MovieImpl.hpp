@@ -151,6 +151,7 @@ namespace sfe
         std::shared_ptr<Demuxer> m_demuxer;
         std::shared_ptr<Timer> m_timer;
         sf::Sprite m_videoSprite;
+        mutable std::unique_ptr<sf::Texture> m_emptyTexture;
         std::list<sf::Sprite> m_subtitleSprites;
         Streams m_audioStreamsDesc;
         Streams m_videoStreamsDesc;
